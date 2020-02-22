@@ -1,3 +1,4 @@
+import logging
 import random
 import subprocess
 import time
@@ -24,24 +25,47 @@ class EphermeralNameSpace:
 
     def __exit__(self, *args, **kwargs):
         self.api_client.delete_namespace(self.name)
+        logging.info(f"Deleted {self}")
+
+    def __str__(self):
+        return f"EphermeralNameSpace[{self.name}] on [{self.api_client.api_client.configuration.host}]"
 
     def apply_manifests(self, manifests: List[Path]):
         apply_manifests(self.name, manifests)
 
 
-def create_ns(api: client.CoreV1Api) -> EphermeralNameSpace:
-    """Returns the (randomly generated) name of the created namespace"""
-    name = f'{random.getrandbits(64)}-{int(time.time())}'
+def create_named_ns(name: str, api: client.CoreV1Api):
     meta = client.V1ObjectMeta(name=name)
     ns = client.V1Namespace(metadata=meta)
     api.create_namespace(ns)
-    print(f"Created namespace {name}")
-    return EphermeralNameSpace(api, name)
 
 
-if __name__ == '__main__':
+def create_ns(api: client.CoreV1Api) -> EphermeralNameSpace:
+    """Returns the (randomly generated) name of the created namespace"""
+    name = f'{random.getrandbits(64)}-{int(time.time())}'
+    create_named_ns(name, api)
+    ns = EphermeralNameSpace(api, name)
+    logging.info(f"Created {ns}")
+    return ns
+
+
+def with_manifests(manifests):
+    def inner(fn):
+        fn()
+
+    return inner
+
+
+def api_client_from_config() -> client.CoreV1Api:
     configuration = config.load_kube_config()
-    api = client.CoreV1Api(client.ApiClient(configuration))
+    return client.CoreV1Api(client.ApiClient(configuration))
+
+
+def main():
+    api = api_client_from_config()
     with create_ns(api) as ns:
         ns.apply_manifests([Path('job.yaml')])
 
+
+if __name__ == '__main__':
+    main()
